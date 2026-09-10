@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Desk | Records</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="records">
+  <div class="app-shell"><aside class="sidebar"><a class="brand" href="index.html"><span class="brand-mark">ID</span><span>Inventory<br><strong>Desk</strong></span></a><nav class="main-nav" aria-label="Main navigation"><a class="nav-link" href="index.html"><span class="nav-icon">01</span> Overview</a><a class="nav-link active" href="records.html"><span class="nav-icon">02</span> All records</a><a class="nav-link" href="form.html"><span class="nav-icon">03</span> Add record</a></nav><div class="sidebar-note"><span class="eyebrow">Workspace</span><strong>North campus</strong><span>Updated today at 09:42</span></div></aside><main class="main-content"><header class="topbar"><div><span class="eyebrow">Inventory directory</span><h1>All records</h1></div><a class="button button-primary" href="form.html"><span>+</span> New record</a></header><section class="page-toolbar"><div class="search-wrap"><span class="search-icon">/</span><input id="record-search" type="search" placeholder="Search by name, category, or location" aria-label="Search records"></div><select id="status-filter" aria-label="Filter by status"><option value="all">All statuses</option><option value="Active">Active</option><option value="Maintenance">Maintenance</option><option value="Archived">Archived</option></select></section><section class="panel table-panel"><div class="table-meta"><div><span class="eyebrow">Current inventory</span><p id="record-count" class="table-count">0 records</p></div><span class="table-hint">Select an item to edit or remove it</span></div><div class="table-scroll"><table><thead><tr><th>Asset</th><th>Category</th><th>Location</th><th>Owner</th><th>Status</th><th>Value</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="records-body"></tbody></table></div><div id="empty-state" class="empty-state" hidden><strong>No records found</strong><span>Try a different search or add a new asset.</span><a class="button button-secondary" href="form.html">Add a record</a></div></section></main></div>
+  <script src="app.js"></script>
+</body>
+</html>

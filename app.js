@@ -1,26 +1,29 @@
-const STORAGE_KEY = 'inventory-desk-records';
+let recordsCache = [];
 
-const seedRecords = [
-  { id: 'asset-1001', name: 'MacBook Pro 14-inch', category: 'Technology', location: 'Studio 2B', owner: 'Maya Chen', value: 2199, status: 'Active', notes: 'Primary design workstation.' },
-  { id: 'asset-1002', name: 'Herman Miller Aeron', category: 'Furniture', location: 'Studio 2B', owner: 'Jon Bell', value: 1280, status: 'Active', notes: 'Size B, graphite finish.' },
-  { id: 'asset-1003', name: 'Sony A7 IV Camera', category: 'Technology', location: 'Media Lab', owner: 'Nora Singh', value: 2498, status: 'Maintenance', notes: 'Sensor cleaning scheduled.' },
-  { id: 'asset-1004', name: 'Cargo e-bike', category: 'Vehicles', location: 'Loading bay', owner: 'Facilities', value: 3400, status: 'Active', notes: 'Shared delivery vehicle.' },
-  { id: 'asset-1005', name: 'Meeting table, oak', category: 'Furniture', location: 'Room 104', owner: 'Operations', value: 890, status: 'Archived', notes: 'Held for refurbishment.' }
-];
-
-function getRecords() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seedRecords));
-    return [...seedRecords];
-  }
-  try { return JSON.parse(saved); } catch { return [...seedRecords]; }
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status}).`);
+  return payload;
 }
 
-function saveRecords(records) { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
 function formatCurrency(value) { return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value) || 0); }
 function statusClass(status) { return `status-${status.toLowerCase()}`; }
-function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#039;', '"':'&quot;' }[character])); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#039;', '"':'&quot;' }[character])); }
+
+function showPageError(message) {
+  let banner = document.querySelector('#page-error');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'page-error';
+    banner.className = 'page-error';
+    document.querySelector('.main-content').prepend(banner);
+  }
+  banner.textContent = message;
+}
 
 function renderDashboard(records) {
   document.querySelector('#total-count').textContent = records.length;
@@ -37,7 +40,7 @@ function renderRecords() {
   const body = document.querySelector('#records-body');
   const search = document.querySelector('#record-search').value.toLowerCase().trim();
   const filter = document.querySelector('#status-filter').value;
-  const records = getRecords().filter(record => {
+  const records = recordsCache.filter(record => {
     const searchable = `${record.name} ${record.category} ${record.location} ${record.owner}`.toLowerCase();
     return searchable.includes(search) && (filter === 'all' || record.status === filter);
   });
@@ -47,39 +50,69 @@ function renderRecords() {
   body.querySelectorAll('[data-delete-id]').forEach(button => button.addEventListener('click', () => deleteRecord(button.dataset.deleteId)));
 }
 
-function deleteRecord(id) {
-  const record = getRecords().find(item => item.id === id);
+async function deleteRecord(id) {
+  const record = recordsCache.find(item => String(item.id) === String(id));
   if (!record || !window.confirm(`Delete ${record.name}?`)) return;
-  saveRecords(getRecords().filter(item => item.id !== id));
-  renderRecords();
+  try {
+    await apiRequest(`/api/records/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    recordsCache = recordsCache.filter(item => String(item.id) !== String(id));
+    renderRecords();
+  } catch (error) {
+    showPageError(error.message);
+  }
 }
 
-function setupForm() {
+async function setupForm() {
   const form = document.querySelector('#record-form');
-  const params = new URLSearchParams(window.location.search);
-  const existing = getRecords().find(record => record.id === params.get('id'));
-  if (existing) {
-    document.querySelector('#form-title').textContent = 'Edit record';
-    document.querySelector('#submit-label').textContent = 'Update record';
-    Object.entries(existing).forEach(([key, value]) => { const field = document.querySelector(`#${key}`); if (field) field.value = value; });
+  const message = document.querySelector('#form-message');
+  const submit = form.querySelector('[type="submit"]');
+  const id = new URLSearchParams(window.location.search).get('id');
+  if (id) {
+    try {
+      const existing = await apiRequest(`/api/records/${encodeURIComponent(id)}`);
+      document.querySelector('#form-title').textContent = 'Edit record';
+      document.querySelector('#submit-label').textContent = 'Update record';
+      Object.entries(existing).forEach(([key, value]) => {
+        const field = document.querySelector(`#${key}`);
+        if (field) field.value = value ?? '';
+      });
+    } catch (error) {
+      message.textContent = error.message;
+      submit.disabled = true;
+      return;
+    }
   }
-  form.addEventListener('submit', event => {
+
+  form.addEventListener('submit', async event => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
-    const records = getRecords();
-    const record = { ...data, id: data.id || `asset-${Date.now()}`, value: Number(data.value) };
-    const index = records.findIndex(item => item.id === record.id);
-    if (index === -1) records.unshift(record); else records[index] = record;
-    saveRecords(records);
-    document.querySelector('#form-message').textContent = index === -1 ? 'Record saved. Redirecting...' : 'Record updated. Redirecting...';
-    window.setTimeout(() => { window.location.href = 'records.html'; }, 500);
+    data.value = Number(data.value);
+    submit.disabled = true;
+    message.textContent = 'Saving...';
+    try {
+      await apiRequest(id ? `/api/records/${encodeURIComponent(id)}` : '/api/records', {
+        method: id ? 'PUT' : 'POST',
+        body: JSON.stringify(data)
+      });
+      message.textContent = id ? 'Record updated. Redirecting...' : 'Record saved. Redirecting...';
+      window.setTimeout(() => { window.location.href = 'records.html'; }, 500);
+    } catch (error) {
+      message.textContent = error.message;
+      submit.disabled = false;
+    }
   });
 }
 
-const records = getRecords();
-if (document.body.dataset.page === 'dashboard') renderDashboard(records);
+async function loadRecords() {
+  recordsCache = await apiRequest('/api/records');
+  return recordsCache;
+}
+
+if (document.body.dataset.page === 'dashboard') {
+  loadRecords().then(renderDashboard).catch(error => showPageError(error.message));
+}
 if (document.body.dataset.page === 'records') {
-  renderRecords();
+  loadRecords().then(renderRecords).catch(error => showPageError(error.message));
   document.querySelector('#record-search').addEventListener('input', renderRecords);
   document.querySelector('#status-filter').addEventListener('change', renderRecords);
 }
